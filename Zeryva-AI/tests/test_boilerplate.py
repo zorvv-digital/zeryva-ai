@@ -9,8 +9,9 @@ from app.db.session import Base
 from app.models.schemas import HealthResponse
 
 def test_settings_initialization():
-    assert settings.APP_NAME is not None
+    assert settings.PROJECT_NAME is not None
     assert settings.API_V1_STR == "/api/v1"
+
 
 def test_schema_instantiation():
     health = HealthResponse(status="online", app_name="TestApp", version="0.1.0")
