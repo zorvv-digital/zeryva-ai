@@ -6,24 +6,24 @@ import os
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 ENV_FILE_PATH = os.path.join(BASE_DIR, ".env")
 
+
 class Settings(BaseSettings):
     """Application settings loaded from environment or .env file"""
-    
+
     model_config = SettingsConfigDict(
         env_file=ENV_FILE_PATH,
         env_file_encoding="utf-8",
         extra="ignore"
     )
-    
+
     PROJECT_NAME: str = "Zeryva AI Platform"
     VERSION: str = "0.1.0"
     API_V1_STR: str = "/api/v1"
     ENVIRONMENT: str = "development"
     DEBUG: bool = False
 
-    
     # Generic LLM configuration
-    llm_provider: str = "openai"  # 'nim', 'openai', 'gemini', 'anthropic', etc.
+    llm_provider: str = "gemini"  # 'nim', 'openai', 'gemini', 'anthropic', etc.
     llm_api_key: Optional[str] = None
     llm_model: Optional[str] = None
     llm_base_url: Optional[str] = None
@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     nim_api_key: Optional[str] = None
     nim_model: Optional[str] = None
     nim_base_url: Optional[str] = None
-    
+
     gemini_api_key: Optional[str] = None
     gemini_model: Optional[str] = None
     gemini_base_url: Optional[str] = None
@@ -57,15 +57,16 @@ class Settings(BaseSettings):
         return self
 
     # Database Settings
-    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/zeryva_ai"
-    
+    DATABASE_URL: str = "sqlite+aiosqlite:///./zeryva_ai.db"
+
     # Security
     SECRET_KEY: str = "zeryva-super-secret-key-change-in-production-32bytes!"
-    
+
     # WhatsApp configuration
     whatsapp_verify_token: Optional[str] = None
     whatsapp_token: Optional[str] = Field(None, validation_alias=AliasChoices("whatsapp_token", "whatsapp_access_token"))
     whatsapp_phone_number_id: Optional[str] = None
     whatsapp_api_version: str = "v20.0"
+
 
 settings = Settings()

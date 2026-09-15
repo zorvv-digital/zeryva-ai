@@ -1,5 +1,5 @@
 import uuid
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import Optional, Any
 from datetime import datetime
 
@@ -18,7 +18,7 @@ class BusinessProfileBase(BaseModel):
     business_name: str
     business_type: str
     location: Optional[str] = None
-    offerings: list[str]
+    offerings: list[str] = Field(default_factory=list)
     working_hours: Optional[str] = None
 
 class DynamicUIField(BaseModel):
@@ -42,6 +42,13 @@ class BuilderInput(BaseModel):
     business_profile: BusinessProfileBase
     collected_answers: Optional[dict[str, Any]] = None
     agent_setup: Optional[AgentSetup] = None
+
+    @field_validator("project_id", mode="before")
+    @classmethod
+    def parse_empty_project_id(cls, value: Any) -> Any:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
 class AgentSkill(BaseModel):
     skill_name: str
@@ -88,5 +95,3 @@ class AgentResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     model_config = ConfigDict(from_attributes=True)
-
-

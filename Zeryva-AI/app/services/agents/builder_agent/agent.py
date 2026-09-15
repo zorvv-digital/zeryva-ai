@@ -1,124 +1,99 @@
-import json
-import uuid
 from pathlib import Path
-from typing import Optional
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-
 from agno.agent import Agent
 from app.providers.llm import model
-from app.db.models import Project, AgentModel
-from app.models.schemas import (
-    BuilderInput,
-    Step1PromptResponse,
-    SkillsExtractionResponse,
-    BuilderAgentResponse,
-    AgentSkill,
-)
+from app.models.schemas import BuilderInput, Step1PromptResponse, AgentSkill
+from app.services.agents.builder_agent.skills_agent.agent import skills_agent
 
-# Load Step 1 Builder Agent Prompt
-prompt_path = Path(__file__).parent / "prompt.md"
-system_prompt = prompt_path.read_text(encoding="utf-8")
-
-builder_agent = Agent(
-    name="Builder Agent",
-    model=model,
-    description="Synthesizes business profiling and onboarding data into a WhatsApp AI agent system prompt.",
-    instructions=system_prompt,
-    output_schema=Step1PromptResponse,
-)
-
-# Define Step 2 Knowledge Search Skills Extractor Agent
-skills_instructions = """You are a Knowledge & Text Search Skill Extractor for AI Agents.
-Your job is to analyze the provided business agent system prompt and business context.
-
-CRITICAL RULE:
-You MUST ONLY extract Knowledge Retrieval and Text Search skills (e.g., `faq_knowledge_search`, `document_text_search`, `catalog_price_search`, `policy_lookup`).
-Do NOT generate transactional action tools (e.g. appointment booking, order processing, payment handling).
-
-For each knowledge search skill identified:
-- `skill_name`: Unique snake_case identifier (e.g., `faq_knowledge_search`)
-- `description`: Clear summary of what text/document knowledge this skill retrieves
-- `is_required`: boolean flag
-"""
-
-skills_agent = Agent(
-    name="Skills Extractor Agent",
-    model=model,
-    description="Extracts knowledge retrieval and text search skills for the agent.",
-    instructions=skills_instructions,
-    output_schema=SkillsExtractionResponse,
-)
+PROMPT_DIR = Path(__file__).parent
 
 
-async def generate_builder_agent_config(
-    builder_input: BuilderInput,
-    db: Optional[AsyncSession] = None
-) -> BuilderAgentResponse:
-    input_json = builder_input.model_dump_json()
+class BuilderAgent:
+    """
+    Builder Agent responsible for synthesizing production AI agent system prompts
+    and orchestrating knowledge search skill extraction.
+    """
 
-    # Step 1: Generate System Prompt & Flag Knowledge Search Need
-    step1_result = builder_agent.run(input_json)
-    step1_data: Step1PromptResponse = step1_result.content
-
-    skills: list[AgentSkill] = []
-
-    # Step 2: Conditional execution for Knowledge Search Skills extraction
-    if step1_data.requires_knowledge_search:
-        context_payload = {
-            "agent_name": step1_data.agent_name,
-            "system_prompt": step1_data.system_prompt,
-            "business_profile": builder_input.business_profile.model_dump(),
-            "collected_answers": builder_input.collected_answers,
-        }
-        step2_result = skills_agent.run(json.dumps(context_payload))
-        step2_data: SkillsExtractionResponse = step2_result.content
-        skills = step2_data.skills
-
-    skills_dict_list = [skill.model_dump() for skill in skills]
-
-    target_project_id: uuid.UUID
-    agent_id: uuid.UUID
-
-    if db is not None:
-        if builder_input.project_id:
-            target_project_id = builder_input.project_id
-        else:
-            # Look for an existing default project or create one
-            result = await db.execute(select(Project).order_by(Project.created_at.asc()).limit(1))
-            existing_project = result.scalars().first()
-            if existing_project:
-                target_project_id = existing_project.id
-            else:
-                new_project = Project(
-                    name="Default Workspace",
-                    description="Default project created automatically for built agents."
-                )
-                db.add(new_project)
-                await db.flush()
-                target_project_id = new_project.id
-
-        agent_record = AgentModel(
-            project_id=target_project_id,
-            agent_name=step1_data.agent_name,
-            system_prompt=step1_data.system_prompt,
-            greeting_message=step1_data.greeting_message,
-            skills=skills_dict_list,
-            is_active=True,
+    def __init__(self) -> None:
+        system_prompt = (PROMPT_DIR / "builder_system_prompt.md").read_text(encoding="utf-8")
+        self.user_template = (PROMPT_DIR / "builder_user_prompt.md").read_text(encoding="utf-8")
+        self.agent = Agent(
+            name="Builder Agent",
+            model=model,
+            description="Synthesizes business profiling and onboarding data into a WhatsApp AI agent system prompt.",
+            instructions=system_prompt,
+            output_schema=Step1PromptResponse,
         )
-        db.add(agent_record)
-        await db.commit()
-        await db.refresh(agent_record)
-        agent_id = agent_record.id
-    else:
-        target_project_id = builder_input.project_id or uuid.uuid4()
-        agent_id = uuid.uuid4()
 
-    return BuilderAgentResponse(
-        agent_id=agent_id,
-        project_id=target_project_id,
-        agent_name=step1_data.agent_name,
-        system_prompt=step1_data.system_prompt,
-        greeting_message=step1_data.greeting_message,
-        skills=skills,
-    )
+    def run(self, builder_input: BuilderInput) -> tuple[Step1PromptResponse, list[AgentSkill]]:
+        """
+        Executes the Builder Agent pipeline:
+        1. Formats input profile and setup preferences into user prompt placeholders.
+        2. Executes Step 1 Builder Agent to synthesize prompt & greeting message.
+        3. Conditionally delegates Step 2 to SkillsAgent if knowledge search is required.
+
+        Args:
+            builder_input (BuilderInput): Incoming builder configuration payload.
+
+        Returns:
+            tuple[Step1PromptResponse, list[AgentSkill]]: Synthesized prompt response and list of extracted skills.
+        """
+        profile = builder_input.business_profile
+        setup = builder_input.agent_setup
+
+        # Format questionnaire answers string
+        formatted_answers = (
+            "\n".join(f"- **{k}**: {v}" for k, v in builder_input.collected_answers.items())
+            if builder_input.collected_answers
+            else "No additional questionnaire answers provided."
+        )
+
+        # Format custom rules string
+        formatted_rules = (
+            "\n".join(f"- {r}" for r in setup.rules)
+            if (setup and setup.rules)
+            else "- Standard customer service rules apply."
+        )
+
+        # Interpolate prompt placeholders
+        prompt = self.user_template.format(
+            business_name=profile.business_name,
+            business_type=profile.business_type,
+            location=profile.location or "Not specified",
+            working_hours=profile.working_hours or "Not specified",
+            offerings=", ".join(profile.offerings) if profile.offerings else "Not specified",
+            collected_answers=formatted_answers,
+            agent_name=setup.agent_name if (setup and setup.agent_name) else "Default Assistant",
+            personality=setup.personality if (setup and setup.personality) else "Professional, friendly, and helpful",
+            business_objective=setup.business_objective if (setup and setup.business_objective) else "Assist customers with inquiries and general support",
+            custom_rules=formatted_rules,
+        )
+
+        # Step 1: Synthesize prompt & greeting message
+        response = self.agent.run(prompt)
+        step1_data = response.content
+        if isinstance(step1_data, str):
+            raise RuntimeError(f"Builder Agent LLM generation failed: {step1_data}")
+
+        # Step 2: Conditionally extract knowledge search skills
+        skills: list[AgentSkill] = []
+        if step1_data.requires_knowledge_search:
+            skills = skills_agent.run(
+                agent_name=step1_data.agent_name,
+                business_name=profile.business_name,
+                business_type=profile.business_type,
+                system_prompt_text=step1_data.system_prompt,
+                collected_answers=formatted_answers,
+            )
+
+        return step1_data, skills
+
+
+# Singleton instance for simple imports
+builder_agent = BuilderAgent()
+
+
+def synthesize_agent_config(
+    builder_input: BuilderInput,
+) -> tuple[Step1PromptResponse, list[AgentSkill]]:
+    """Functional shortcut delegating to builder_agent instance."""
+    return builder_agent.run(builder_input)
