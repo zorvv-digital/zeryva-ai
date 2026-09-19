@@ -29,6 +29,7 @@ def test_openapi_schema_contains_all_registered_routes():
 
     expected_routes = [
         "/api/v1/projects",
+        "/api/v1/projects/{project_id}",
         "/api/v1/projects/{project_id}/agents",
         "/api/v1/projects/{project_id}/chat",
         "/api/v1/projects/{project_id}/agents/{agent_id}/tools",

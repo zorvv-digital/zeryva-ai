@@ -32,6 +32,17 @@ async def list_projects(db: AsyncSession = Depends(get_db)):
     return await ProjectService.list_projects(db=db)
 
 
+@router.get("/{project_id}", response_model=ProjectResponse)
+async def get_project(
+    project_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db)
+):
+    project = await ProjectService.get_project(db=db, project_id=project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return project
+
+
 @router.get("/{project_id}/agents", response_model=list[AgentResponse])
 async def list_project_agents(
     project_id: uuid.UUID,
