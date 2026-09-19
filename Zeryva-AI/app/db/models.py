@@ -25,6 +25,7 @@ class Project(BaseModelMixin):
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     agents: Mapped[list["AgentModel"]] = relationship("AgentModel", back_populates="project", cascade="all, delete-orphan")
+    tools: Mapped[list["ToolModel"]] = relationship("ToolModel", back_populates="project", cascade="all, delete-orphan")
 
 
 class AgentModel(BaseModelMixin):
@@ -38,3 +39,22 @@ class AgentModel(BaseModelMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     project: Mapped["Project"] = relationship("Project", back_populates="agents")
+    tools: Mapped[list["ToolModel"]] = relationship("ToolModel", back_populates="agent", cascade="all, delete-orphan")
+
+
+class ToolModel(BaseModelMixin):
+    """
+    Database model for dynamic AI Agent tools with polymorphic configuration payload.
+    """
+    __tablename__ = "tools"
+
+    project_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    agent_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("agents.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    tool_type: Mapped[str] = mapped_column(String(50), nullable=False, default="text_context")
+    config: Mapped[Any] = mapped_column(JSON, nullable=False, default=dict)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    project: Mapped["Project"] = relationship("Project", back_populates="tools")
+    agent: Mapped["AgentModel"] = relationship("AgentModel", back_populates="tools")

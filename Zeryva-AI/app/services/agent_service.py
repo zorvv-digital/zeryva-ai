@@ -1,12 +1,21 @@
 import uuid
+import asyncio
 from typing import Optional, Sequence
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from fastapi import HTTPException
+from agno.agent import Agent
+from agno.db.sqlite import SqliteDb
 
 from app.services.base import BaseService
 from app.db.models import Project, AgentModel
-from app.models.schemas import BuilderInput, BuilderAgentResponse
+from app.models.schemas import BuilderInput, BuilderAgentResponse, AgentChatResponse
 from app.services.agents.builder_agent.agent import synthesize_agent_config
+from app.services.tool_service import ToolService
+from app.services.tools import ToolFactory
+from app.providers.llm import model
+
+agno_db = SqliteDb(db_file="agno_sessions.db", session_table="agno_sessions")
 
 
 class AgentService(BaseService):
@@ -14,7 +23,7 @@ class AgentService(BaseService):
     Service layer for AI Agent management and creation workflow.
 
     Encapsulates database persistence, agent querying, default workspace resolution,
-    and LLM agent configuration synthesis.
+    LLM agent configuration synthesis, dynamic tool mounting, and non-blocking runtime agent chat execution.
     """
 
     @classmethod
@@ -117,4 +126,65 @@ class AgentService(BaseService):
             system_prompt=step1_data.system_prompt,
             greeting_message=step1_data.greeting_message,
             skills=skills,
+        )
+
+    @classmethod
+    async def execute_agent_chat(
+        cls,
+        db: AsyncSession,
+        project_id: uuid.UUID,
+        user_message: str,
+        session_id: Optional[str] = None,
+    ) -> AgentChatResponse:
+        """
+        Executes a user chat message against an active saved Agent for a workspace project:
+        1. Queries the latest active AgentModel for the given project_id.
+        2. Fetches active custom tools registered for the agent and converts them to runtime Agno tools.
+        3. Instantiates a runtime Agno Agent configured with native SqliteDb session storage and dynamic tools.
+        4. Executes the message non-blockingly via asyncio threadpool.
+        5. Returns the synthesized AgentChatResponse.
+        """
+        result = await db.execute(
+            select(AgentModel)
+            .where(AgentModel.project_id == project_id, AgentModel.is_active == True)
+            .order_by(AgentModel.created_at.desc())
+            .limit(1)
+        )
+        agent_record = result.scalars().first()
+        if not agent_record:
+            raise HTTPException(status_code=404, detail="No active agent found for this project.")
+
+        agent_id = agent_record.id
+        agent_name = agent_record.agent_name
+        system_prompt = agent_record.system_prompt
+        target_session_id = session_id.strip() if (session_id and session_id.strip()) else str(project_id)
+
+        # Fetch active tools for agent and build dynamic runtime tool callables
+        tool_records = await ToolService.list_active_tools_for_agent(db=db, agent_id=agent_id)
+        runtime_tools = ToolFactory.create_tools(tool_records) if tool_records else None
+
+        runtime_agent = Agent(
+            name=agent_name,
+            instructions=system_prompt,
+            tools=runtime_tools,
+            model=model,
+        )
+
+        try:
+            llm_response = await asyncio.to_thread(
+                runtime_agent.run,
+                user_message,
+                session_id=target_session_id,
+            )
+            response_text = str(llm_response.content) if llm_response else ""
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Agent execution failed: {exc}")
+
+        return AgentChatResponse(
+            agent_id=agent_id,
+            project_id=project_id,
+            session_id=target_session_id,
+            agent_name=agent_name,
+            user_message=user_message,
+            response=response_text,
         )
