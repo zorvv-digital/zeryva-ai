@@ -152,4 +152,8 @@ def import_seed(seed_file: Path = SEED_PATH, db_file: Path = DB_PATH) -> None:
 
 
 if __name__ == "__main__":
-    export_seed()
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "export":
+        export_seed()
+    else:
+        import_seed()

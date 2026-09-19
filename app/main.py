@@ -10,9 +10,14 @@ import app.db.models  # Register models for metadata creation
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Automatic table creation on application startup."""
+    """Automatic table creation and seed data import on application startup."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    try:
+        from scripts.db_seed_manager import import_seed
+        import_seed()
+    except Exception as exc:
+        print(f"Seed import warning: {exc}")
     yield
 
 
