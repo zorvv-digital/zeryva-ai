@@ -168,6 +168,7 @@ class AgentService(BaseService):
             instructions=system_prompt,
             tools=runtime_tools,
             model=model,
+            markdown=True,
         )
 
         try:
