@@ -159,15 +159,28 @@ class AgentService(BaseService):
         system_prompt = agent_record.system_prompt
         target_session_id = session_id.strip() if (session_id and session_id.strip()) else str(project_id)
 
+        # Append WhatsApp formatting rules to system prompt to guarantee proper line breaks and bullet points
+        formatting_rules = (
+            "\n\n### Messaging Format Rules\n"
+            "- Always format messages with clear line breaks (`\n\n`) between distinct paragraphs.\n"
+            "- Place EVERY list item or bullet point on its own NEW line (e.g.\n- Item 1\n- Item 2).\n"
+            "- NEVER collapse or concatenate multiple bullet points or list items onto a single continuous line.\n"
+            "- Use **bold text** for key details like prices, dates, and names."
+        )
+        full_instructions = f"{system_prompt}{formatting_rules}"
+
         # Fetch active tools for agent and build dynamic runtime tool callables
         tool_records = await ToolService.list_active_tools_for_agent(db=db, agent_id=agent_id)
         runtime_tools = ToolFactory.create_tools(tool_records) if tool_records else None
 
         runtime_agent = Agent(
             name=agent_name,
-            instructions=system_prompt,
+            instructions=full_instructions,
             tools=runtime_tools,
             model=model,
+            db=agno_db,
+            add_history_to_context=True,
+            num_history_messages=10,
             markdown=True,
         )
 
