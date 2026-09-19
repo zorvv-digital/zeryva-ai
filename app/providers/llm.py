@@ -7,9 +7,12 @@ logger = logging.getLogger("llm")
 provider = (settings.llm_provider or "").strip().lower()
 
 logger.info(f"Initializing model for provider '{provider}': {settings.llm_model}")
+supports_native = (provider == "openai" and not settings.llm_base_url)
+
 model = OpenAIChat(
     id=settings.llm_model,
     api_key=settings.llm_api_key,
     base_url=settings.llm_base_url,
     temperature=0.2,
+    supports_native_structured_outputs=supports_native,
 )

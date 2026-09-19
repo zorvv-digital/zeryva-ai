@@ -25,7 +25,11 @@ class ProjectService(BaseService):
         Returns:
             Project: The newly created and refreshed database Project model instance.
         """
-        project = Project(name=project_in.name, description=project_in.description)
+        project = Project(
+            name=project_in.name,
+            description=project_in.description,
+            image_url=project_in.image_url,
+        )
         db.add(project)
         await db.commit()
         await db.refresh(project)

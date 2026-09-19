@@ -23,6 +23,7 @@ class Project(BaseModelMixin):
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    image_url: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
 
     agents: Mapped[list["AgentModel"]] = relationship("AgentModel", back_populates="project", cascade="all, delete-orphan")
     tools: Mapped[list["ToolModel"]] = relationship("ToolModel", back_populates="project", cascade="all, delete-orphan")

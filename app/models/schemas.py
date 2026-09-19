@@ -88,12 +88,14 @@ class BuilderAgentResponse(BaseModel):
 class ProjectCreate(BaseModel):
     name: str
     description: Optional[str] = None
+    image_url: Optional[str] = None
 
 
 class ProjectResponse(BaseModel):
     id: uuid.UUID
     name: str
     description: Optional[str] = None
+    image_url: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     model_config = ConfigDict(from_attributes=True)
@@ -110,6 +112,13 @@ class AgentResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     model_config = ConfigDict(from_attributes=True)
+
+
+class AgentUpdate(BaseModel):
+    agent_name: Optional[str] = None
+    system_prompt: Optional[str] = None
+    greeting_message: Optional[str] = None
+    is_active: Optional[bool] = None
 
 
 class AgentChatRequest(BaseModel):
